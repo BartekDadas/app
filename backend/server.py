@@ -596,6 +596,53 @@ async def get_text_progress(text_id: str):
         hints_used=p.get("hints_used", 0)
     ) for p in progress_list]
 
+# ----- WORD TRANSLATION -----
+
+class WordTranslateRequest(BaseModel):
+    word: str
+
+@api_router.post("/translate-word")
+async def translate_word(request: WordTranslateRequest):
+    """Translate a single Korean word."""
+    word = request.word
+    try:
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            return {"word": word, "translation": "Translation unavailable", "romanization": ""}
+        
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"word_{uuid.uuid4()}",
+            system_message="""You are a Korean-English translator. Translate the given Korean word/phrase.
+Respond ONLY in valid JSON format with keys: translation (English meaning), romanization (pronunciation), part_of_speech (noun/verb/adjective/etc)"""
+        ).with_model("openai", "gpt-4o")
+        
+        user_message = UserMessage(text=f"Translate this Korean word: {word}")
+        response = await chat.send_message(user_message)
+        
+        import json
+        try:
+            clean_response = response.strip()
+            if clean_response.startswith("```json"):
+                clean_response = clean_response[7:]
+            if clean_response.startswith("```"):
+                clean_response = clean_response[3:]
+            if clean_response.endswith("```"):
+                clean_response = clean_response[:-3]
+            
+            result = json.loads(clean_response.strip())
+            return {
+                "word": word,
+                "translation": result.get("translation", "Unknown"),
+                "romanization": result.get("romanization", ""),
+                "part_of_speech": result.get("part_of_speech", "")
+            }
+        except json.JSONDecodeError:
+            return {"word": word, "translation": response.strip()[:50], "romanization": ""}
+    except Exception as e:
+        logger.error(f"Word translation error: {e}")
+        return {"word": word, "translation": "Translation error", "romanization": ""}
+
 # ----- HINTS -----
 
 @api_router.get("/hints/{sentence_id}/{level}")
