@@ -12,16 +12,15 @@ import {
   ScrollView,
   Animated,
   Modal,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
+import RewardScene from '../../src/components/RewardScene';
 import Constants from 'expo-constants';
 
 const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface EvaluationResult {
   score: number;
@@ -39,83 +38,6 @@ interface WordTranslation {
   romanization: string;
   part_of_speech?: string;
 }
-
-// Celebration particle component
-const CelebrationParticle = ({ delay, startX }: { delay: number; startX: number }) => {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const translateX = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0)).current;
-  const rotation = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const xDirection = Math.random() > 0.5 ? 1 : -1;
-    
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.parallel([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scale, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: -200 - Math.random() * 100,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateX, {
-          toValue: xDirection * (50 + Math.random() * 80),
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(rotation, {
-          toValue: Math.random() * 4 - 2,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  const colors = ['#E879F9', '#22C55E', '#FBBF24', '#3B82F6', '#8B5CF6'];
-  const icons = ['star', 'sparkles', 'heart', 'diamond'];
-  const color = colors[Math.floor(Math.random() * colors.length)];
-  const icon = icons[Math.floor(Math.random() * icons.length)];
-
-  return (
-    <Animated.View
-      style={[
-        styles.particle,
-        {
-          left: startX,
-          opacity,
-          transform: [
-            { translateY },
-            { translateX },
-            { scale },
-            { rotate: rotation.interpolate({
-              inputRange: [-2, 2],
-              outputRange: ['-360deg', '360deg'],
-            })},
-          ],
-        },
-      ]}
-    >
-      <Ionicons name={icon as any} size={24} color={color} />
-    </Animated.View>
-  );
-};
 
 // Word component with tap to translate
 const TappableWord = ({ 
@@ -159,15 +81,13 @@ export default function StudyScreen() {
   const [hint, setHint] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [showCelebration, setShowCelebration] = useState(false);
+  const [showRewardScene, setShowRewardScene] = useState(false);
   const [selectedWord, setSelectedWord] = useState<WordTranslation | null>(null);
   const [loadingWord, setLoadingWord] = useState(false);
   const [showWordModal, setShowWordModal] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
-  const celebrationScale = useRef(new Animated.Value(0)).current;
-  const celebrationOpacity = useRef(new Animated.Value(0)).current;
 
   const currentSentence = sentences[currentSentenceIndex];
   const progress = sentences.length > 0 ? ((currentSentenceIndex + 1) / sentences.length) * 100 : 0;
@@ -186,7 +106,7 @@ export default function StudyScreen() {
   }, [currentSentence]);
 
   useEffect(() => {
-    if (showResult) {
+    if (showResult && !result?.passed) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -203,48 +123,7 @@ export default function StudyScreen() {
       fadeAnim.setValue(0);
       slideAnim.setValue(50);
     }
-  }, [showResult]);
-
-  useEffect(() => {
-    if (showCelebration) {
-      Animated.parallel([
-        Animated.spring(celebrationScale, {
-          toValue: 1,
-          friction: 5,
-          tension: 40,
-          useNativeDriver: true,
-        }),
-        Animated.timing(celebrationOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Auto-hide celebration after 2.5 seconds
-      const timer = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(celebrationScale, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(celebrationOpacity, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          setShowCelebration(false);
-        });
-      }, 2500);
-
-      return () => clearTimeout(timer);
-    } else {
-      celebrationScale.setValue(0);
-      celebrationOpacity.setValue(0);
-    }
-  }, [showCelebration]);
+  }, [showResult, result]);
 
   const loadSentences = async () => {
     try {
@@ -317,12 +196,13 @@ export default function StudyScreen() {
 
       const evalResult: EvaluationResult = await response.json();
       setResult(evalResult);
-      setShowResult(true);
 
       if (evalResult.passed) {
         addPoints(evalResult.points_earned);
-        // Show celebration animation
-        setTimeout(() => setShowCelebration(true), 500);
+        // Show reward scene animation immediately
+        setShowRewardScene(true);
+      } else {
+        setShowResult(true);
       }
 
       const statsRes = await fetch(`${API_URL}/api/stats`);
@@ -351,9 +231,13 @@ export default function StudyScreen() {
     }
   };
 
+  const handleRewardComplete = () => {
+    setShowRewardScene(false);
+    nextSentence();
+  };
+
   const nextSentence = () => {
     setShowResult(false);
-    setShowCelebration(false);
     setResult(null);
     setUserAnswer('');
     setHint(null);
@@ -468,33 +352,21 @@ export default function StudyScreen() {
             </View>
           )}
 
-          {/* Result Display */}
-          {showResult && result && (
+          {/* Failed Result Display (only for failed attempts) */}
+          {showResult && result && !result.passed && (
             <Animated.View
               style={[
                 styles.resultCard,
-                result.passed ? styles.resultCardPass : styles.resultCardFail,
+                styles.resultCardFail,
                 { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
               ]}
             >
               <View style={styles.resultHeader}>
-                <Ionicons
-                  name={result.passed ? 'checkmark-circle' : 'close-circle'}
-                  size={32}
-                  color={result.passed ? '#22C55E' : '#EF4444'}
-                />
+                <Ionicons name="close-circle" size={32} color="#EF4444" />
                 <View style={styles.resultScores}>
                   <Text style={styles.resultScore}>{result.score}%</Text>
-                  <Text style={styles.resultLabel}>
-                    {result.passed ? 'Excellent!' : 'Try Again'}
-                  </Text>
+                  <Text style={styles.resultLabel}>Try Again</Text>
                 </View>
-                {result.passed && result.points_earned > 0 && (
-                  <View style={styles.pointsEarned}>
-                    <Ionicons name="flash" size={16} color="#FBBF24" />
-                    <Text style={styles.pointsEarnedText}>+{result.points_earned}</Text>
-                  </View>
-                )}
               </View>
 
               <View style={styles.scoreBreakdown}>
@@ -511,18 +383,11 @@ export default function StudyScreen() {
               {result.hint && (
                 <Text style={styles.resultHint}>{result.hint}</Text>
               )}
-
-              {result.passed && (
-                <TouchableOpacity style={styles.nextButtonLarge} onPress={nextSentence}>
-                  <Text style={styles.nextButtonText}>Continue</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#0D0D1A" />
-                </TouchableOpacity>
-              )}
             </Animated.View>
           )}
 
           {/* Input Section */}
-          {!showResult && (
+          {!showResult && !showRewardScene && (
             <View style={styles.inputSection}>
               <Text style={styles.inputLabel}>YOUR TRANSLATION</Text>
               <View style={styles.inputContainer}>
@@ -554,7 +419,7 @@ export default function StudyScreen() {
         </ScrollView>
 
         {/* Submit Button */}
-        {!showResult ? (
+        {!showResult && !showRewardScene ? (
           <View style={styles.footer}>
             <TouchableOpacity
               style={[
@@ -574,7 +439,7 @@ export default function StudyScreen() {
               )}
             </TouchableOpacity>
           </View>
-        ) : !result?.passed ? (
+        ) : showResult && !result?.passed ? (
           <View style={styles.footer}>
             <TouchableOpacity
               style={styles.retryButton}
@@ -589,33 +454,13 @@ export default function StudyScreen() {
           </View>
         ) : null}
 
-        {/* Celebration Animation Overlay */}
-        {showCelebration && (
-          <View style={styles.celebrationOverlay}>
-            {/* Particles */}
-            {Array.from({ length: 20 }).map((_, index) => (
-              <CelebrationParticle
-                key={index}
-                delay={index * 50}
-                startX={SCREEN_WIDTH / 2 - 12 + (Math.random() * 60 - 30)}
-              />
-            ))}
-            
-            {/* Central celebration badge */}
-            <Animated.View
-              style={[
-                styles.celebrationBadge,
-                {
-                  opacity: celebrationOpacity,
-                  transform: [{ scale: celebrationScale }],
-                },
-              ]}
-            >
-              <Ionicons name="trophy" size={60} color="#FBBF24" />
-              <Text style={styles.celebrationTitle}>Well Done!</Text>
-              <Text style={styles.celebrationSubtitle}>+{result?.points_earned} points</Text>
-            </Animated.View>
-          </View>
+        {/* Reward Scene - Auto-playing animation */}
+        {showRewardScene && result && (
+          <RewardScene
+            pointsEarned={result.points_earned}
+            onComplete={handleRewardComplete}
+            sceneType="random"
+          />
         )}
 
         {/* Word Translation Modal */}
@@ -852,10 +697,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
-  resultCardPass: {
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
   resultCardFail: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderColor: 'rgba(239, 68, 68, 0.3)',
@@ -876,20 +717,6 @@ const styles = StyleSheet.create({
   resultLabel: {
     color: '#9CA3AF',
     fontSize: 14,
-  },
-  pointsEarned: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  pointsEarnedText: {
-    color: '#FBBF24',
-    fontSize: 16,
-    fontWeight: '600',
   },
   scoreBreakdown: {
     flexDirection: 'row',
@@ -918,21 +745,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 16,
     lineHeight: 20,
-  },
-  nextButtonLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#22C55E',
-    paddingVertical: 16,
-    borderRadius: 24,
-    marginTop: 20,
-    gap: 8,
-  },
-  nextButtonText: {
-    color: '#0D0D1A',
-    fontSize: 18,
-    fontWeight: '600',
   },
   inputSection: {
     marginBottom: 16,
@@ -1001,38 +813,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
-  },
-  // Celebration styles
-  celebrationOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(13, 13, 26, 0.8)',
-    zIndex: 100,
-  },
-  particle: {
-    position: 'absolute',
-    top: '50%',
-  },
-  celebrationBadge: {
-    backgroundColor: '#1F1F3A',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FBBF24',
-  },
-  celebrationTitle: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-    marginTop: 16,
-  },
-  celebrationSubtitle: {
-    color: '#FBBF24',
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 8,
   },
   // Word modal styles
   modalOverlay: {
