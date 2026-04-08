@@ -23,14 +23,6 @@ export default function RootLayout() {
             animation: 'slide_from_bottom'
           }} 
         />
-        <Stack.Screen 
-          name="game" 
-          options={{ 
-            headerShown: false,
-            presentation: 'fullScreenModal',
-            animation: 'fade'
-          }} 
-        />
       </Stack>
     </View>
   );

@@ -11,11 +11,13 @@ import {
   Keyboard,
   ScrollView,
   Animated,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
+import RewardScene from '../../src/components/RewardScene';
 import Constants from 'expo-constants';
 
 const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -29,6 +31,32 @@ interface EvaluationResult {
   concept_score: number;
   points_earned: number;
 }
+
+interface WordTranslation {
+  word: string;
+  translation: string;
+  romanization: string;
+  part_of_speech?: string;
+}
+
+// Word component with tap to translate
+const TappableWord = ({ 
+  word, 
+  onPress 
+}: { 
+  word: string; 
+  onPress: (word: string) => void;
+}) => {
+  return (
+    <TouchableOpacity 
+      onPress={() => onPress(word)}
+      activeOpacity={0.6}
+      style={styles.wordContainer}
+    >
+      <Text style={styles.koreanWord}>{word}</Text>
+    </TouchableOpacity>
+  );
+};
 
 export default function StudyScreen() {
   const { textId } = useLocalSearchParams<{ textId: string }>();
@@ -53,12 +81,19 @@ export default function StudyScreen() {
   const [hint, setHint] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [showRewardScene, setShowRewardScene] = useState(false);
+  const [selectedWord, setSelectedWord] = useState<WordTranslation | null>(null);
+  const [loadingWord, setLoadingWord] = useState(false);
+  const [showWordModal, setShowWordModal] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
   const currentSentence = sentences[currentSentenceIndex];
   const progress = sentences.length > 0 ? ((currentSentenceIndex + 1) / sentences.length) * 100 : 0;
+
+  // Split Korean text into words
+  const koreanWords = currentSentence?.sentence_ko.split(/\s+/) || [];
 
   useEffect(() => {
     loadSentences();
@@ -71,7 +106,7 @@ export default function StudyScreen() {
   }, [currentSentence]);
 
   useEffect(() => {
-    if (showResult) {
+    if (showResult && !result?.passed) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -88,7 +123,7 @@ export default function StudyScreen() {
       fadeAnim.setValue(0);
       slideAnim.setValue(50);
     }
-  }, [showResult]);
+  }, [showResult, result]);
 
   const loadSentences = async () => {
     try {
@@ -111,7 +146,6 @@ export default function StudyScreen() {
       await fetch(`${API_URL}/api/sentences/${currentSentence.id}/analyze`, {
         method: 'POST',
       });
-      // Reload to get updated data
       const response = await fetch(`${API_URL}/api/texts/${textId}/sentences`);
       const data = await response.json();
       setSentences(data);
@@ -119,6 +153,27 @@ export default function StudyScreen() {
       console.error('Error analyzing sentence:', error);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const translateWord = async (word: string) => {
+    setShowWordModal(true);
+    setLoadingWord(true);
+    setSelectedWord({ word, translation: '', romanization: '' });
+
+    try {
+      const response = await fetch(`${API_URL}/api/translate-word`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word }),
+      });
+      const data = await response.json();
+      setSelectedWord(data);
+    } catch (error) {
+      console.error('Error translating word:', error);
+      setSelectedWord({ word, translation: 'Translation failed', romanization: '' });
+    } finally {
+      setLoadingWord(false);
     }
   };
 
@@ -141,13 +196,15 @@ export default function StudyScreen() {
 
       const evalResult: EvaluationResult = await response.json();
       setResult(evalResult);
-      setShowResult(true);
 
       if (evalResult.passed) {
         addPoints(evalResult.points_earned);
+        // Show reward scene animation immediately
+        setShowRewardScene(true);
+      } else {
+        setShowResult(true);
       }
 
-      // Refresh stats
       const statsRes = await fetch(`${API_URL}/api/stats`);
       const statsData = await statsRes.json();
       setUserStats(statsData);
@@ -174,6 +231,11 @@ export default function StudyScreen() {
     }
   };
 
+  const handleRewardComplete = () => {
+    setShowRewardScene(false);
+    nextSentence();
+  };
+
   const nextSentence = () => {
     setShowResult(false);
     setResult(null);
@@ -184,13 +246,8 @@ export default function StudyScreen() {
     if (currentSentenceIndex < sentences.length - 1) {
       setCurrentSentenceIndex(currentSentenceIndex + 1);
     } else {
-      // Completed all sentences - show game
-      router.push('/game');
+      router.back();
     }
-  };
-
-  const playMiniGame = () => {
-    router.push('/game');
   };
 
   if (loading) {
@@ -261,12 +318,21 @@ export default function StudyScreen() {
             </View>
           </View>
 
-          {/* Sentence Card */}
+          {/* Sentence Card with Tappable Words */}
           <View style={styles.sentenceCard}>
             <View style={styles.quoteIcon}>
               <Ionicons name="chatbox-ellipses" size={24} color="#E879F9" />
             </View>
-            <Text style={styles.koreanText}>{currentSentence.sentence_ko}</Text>
+            <View style={styles.wordsContainer}>
+              {koreanWords.map((word, index) => (
+                <TappableWord
+                  key={index}
+                  word={word}
+                  onPress={translateWord}
+                />
+              ))}
+            </View>
+            <Text style={styles.tapHint}>Tap any word to see translation</Text>
             {currentSentence.romanization && (
               <Text style={styles.romanization}>{currentSentence.romanization}</Text>
             )}
@@ -286,33 +352,21 @@ export default function StudyScreen() {
             </View>
           )}
 
-          {/* Result Display */}
-          {showResult && result && (
+          {/* Failed Result Display (only for failed attempts) */}
+          {showResult && result && !result.passed && (
             <Animated.View
               style={[
                 styles.resultCard,
-                result.passed ? styles.resultCardPass : styles.resultCardFail,
+                styles.resultCardFail,
                 { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
               ]}
             >
               <View style={styles.resultHeader}>
-                <Ionicons
-                  name={result.passed ? 'checkmark-circle' : 'close-circle'}
-                  size={32}
-                  color={result.passed ? '#22C55E' : '#EF4444'}
-                />
+                <Ionicons name="close-circle" size={32} color="#EF4444" />
                 <View style={styles.resultScores}>
                   <Text style={styles.resultScore}>{result.score}%</Text>
-                  <Text style={styles.resultLabel}>
-                    {result.passed ? 'Passed!' : 'Try Again'}
-                  </Text>
+                  <Text style={styles.resultLabel}>Try Again</Text>
                 </View>
-                {result.passed && result.points_earned > 0 && (
-                  <View style={styles.pointsEarned}>
-                    <Ionicons name="flash" size={16} color="#FBBF24" />
-                    <Text style={styles.pointsEarnedText}>+{result.points_earned}</Text>
-                  </View>
-                )}
               </View>
 
               <View style={styles.scoreBreakdown}>
@@ -329,24 +383,11 @@ export default function StudyScreen() {
               {result.hint && (
                 <Text style={styles.resultHint}>{result.hint}</Text>
               )}
-
-              {result.passed && (
-                <View style={styles.resultActions}>
-                  <TouchableOpacity style={styles.gameButton} onPress={playMiniGame}>
-                    <Ionicons name="game-controller" size={20} color="#0D0D1A" />
-                    <Text style={styles.gameButtonText}>Play Game</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.nextButton} onPress={nextSentence}>
-                    <Text style={styles.nextButtonText}>Next</Text>
-                    <Ionicons name="arrow-forward" size={20} color="#0D0D1A" />
-                  </TouchableOpacity>
-                </View>
-              )}
             </Animated.View>
           )}
 
           {/* Input Section */}
-          {!showResult && (
+          {!showResult && !showRewardScene && (
             <View style={styles.inputSection}>
               <Text style={styles.inputLabel}>YOUR TRANSLATION</Text>
               <View style={styles.inputContainer}>
@@ -378,7 +419,7 @@ export default function StudyScreen() {
         </ScrollView>
 
         {/* Submit Button */}
-        {!showResult ? (
+        {!showResult && !showRewardScene ? (
           <View style={styles.footer}>
             <TouchableOpacity
               style={[
@@ -398,7 +439,7 @@ export default function StudyScreen() {
               )}
             </TouchableOpacity>
           </View>
-        ) : !result?.passed ? (
+        ) : showResult && !result?.passed ? (
           <View style={styles.footer}>
             <TouchableOpacity
               style={styles.retryButton}
@@ -412,6 +453,46 @@ export default function StudyScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        {/* Reward Scene - Auto-playing animation */}
+        {showRewardScene && result && (
+          <RewardScene
+            pointsEarned={result.points_earned}
+            onComplete={handleRewardComplete}
+            sceneType="random"
+          />
+        )}
+
+        {/* Word Translation Modal */}
+        <Modal
+          visible={showWordModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowWordModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowWordModal(false)}
+          >
+            <View style={styles.wordModal}>
+              {loadingWord ? (
+                <ActivityIndicator size="small" color="#E879F9" />
+              ) : selectedWord ? (
+                <>
+                  <Text style={styles.modalWord}>{selectedWord.word}</Text>
+                  {selectedWord.romanization && (
+                    <Text style={styles.modalRomanization}>{selectedWord.romanization}</Text>
+                  )}
+                  <Text style={styles.modalTranslation}>{selectedWord.translation}</Text>
+                  {selectedWord.part_of_speech && (
+                    <Text style={styles.modalPartOfSpeech}>{selectedWord.part_of_speech}</Text>
+                  )}
+                </>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -553,12 +634,26 @@ const styles = StyleSheet.create({
   quoteIcon: {
     marginBottom: 16,
   },
-  koreanText: {
+  wordsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  wordContainer: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  koreanWord: {
     color: '#FFFFFF',
     fontSize: 26,
     fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 38,
+  },
+  tapHint: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginTop: 12,
   },
   romanization: {
     color: '#9CA3AF',
@@ -602,10 +697,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
-  resultCardPass: {
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
   resultCardFail: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderColor: 'rgba(239, 68, 68, 0.3)',
@@ -626,20 +717,6 @@ const styles = StyleSheet.create({
   resultLabel: {
     color: '#9CA3AF',
     fontSize: 14,
-  },
-  pointsEarned: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  pointsEarnedText: {
-    color: '#FBBF24',
-    fontSize: 16,
-    fontWeight: '600',
   },
   scoreBreakdown: {
     flexDirection: 'row',
@@ -668,41 +745,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 16,
     lineHeight: 20,
-  },
-  resultActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  gameButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#8B5CF6',
-    paddingVertical: 14,
-    borderRadius: 24,
-    gap: 8,
-  },
-  gameButtonText: {
-    color: '#0D0D1A',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  nextButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#22C55E',
-    paddingVertical: 14,
-    borderRadius: 24,
-    gap: 8,
-  },
-  nextButtonText: {
-    color: '#0D0D1A',
-    fontSize: 16,
-    fontWeight: '600',
   },
   inputSection: {
     marginBottom: 16,
@@ -771,5 +813,47 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  // Word modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  wordModal: {
+    backgroundColor: '#1F1F3A',
+    borderRadius: 20,
+    padding: 24,
+    minWidth: 200,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E879F9',
+  },
+  modalWord: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+  },
+  modalRomanization: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  modalTranslation: {
+    color: '#E879F9',
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  modalPartOfSpeech: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginTop: 8,
+    backgroundColor: 'rgba(107, 114, 128, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
 });
