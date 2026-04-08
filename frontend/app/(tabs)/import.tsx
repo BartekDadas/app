@@ -102,21 +102,7 @@ export default function ImportScreen() {
     }
   };
 
-  const sampleTexts = [
-    {
-      title: 'Daily Conversation',
-      text: '오늘 날씨가 정말 좋아요. 산책하러 갈까요? 점심은 뭘 먹을까요? 한국 음식이 먹고 싶어요. 저는 비빔밥을 좋아해요.',
-    },
-    {
-      title: 'Night Study',
-      text: '밤에 공부하는 것이 가장 집중이 잘 돼요. 밤하늘의 별이 도시의 불빛보다 밝게 빛납니다. 조용한 밤에 책을 읽는 것을 좋아해요.',
-    },
-  ];
 
-  const loadSample = (sample: { title: string; text: string }) => {
-    setTitle(sample.title);
-    setText(sample.text);
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -223,22 +209,7 @@ export default function ImportScreen() {
             </View>
           )}
 
-          {/* Sample Texts */}
-          <View style={styles.samplesSection}>
-            <Text style={styles.label}>SAMPLE TEXTS</Text>
-            <View style={styles.samples}>
-              {sampleTexts.map((sample, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.sampleCard}
-                  onPress={() => loadSample(sample)}
-                >
-                  <Ionicons name="document-text" size={20} color="#8B5CF6" />
-                  <Text style={styles.sampleTitle}>{sample.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+
         </ScrollView>
 
         {/* Import Button */}
@@ -385,30 +356,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
-  samplesSection: {
-    marginTop: 32,
-    marginBottom: 24,
-  },
-  samples: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  sampleCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1F1F3A',
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#2D2D4A',
-  },
-  sampleTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '500',
-  },
+
   footer: {
     padding: 20,
     paddingBottom: 8,

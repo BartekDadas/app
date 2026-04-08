@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Animated,
   Dimensions,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -20,31 +21,40 @@ interface RewardSceneProps {
 const ShipDodgeScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
   const shipY = useRef(new Animated.Value(SCREEN_HEIGHT * 0.4)).current;
   const shipX = useRef(new Animated.Value(60)).current;
-  
-  const obstacles = [
-    { id: 1, x: useRef(new Animated.Value(SCREEN_WIDTH)).current, y: 80 },
-    { id: 2, x: useRef(new Animated.Value(SCREEN_WIDTH + 150)).current, y: 200 },
-    { id: 3, x: useRef(new Animated.Value(SCREEN_WIDTH + 300)).current, y: 120 },
-    { id: 4, x: useRef(new Animated.Value(SCREEN_WIDTH + 400)).current, y: 280 },
-    { id: 5, x: useRef(new Animated.Value(SCREEN_WIDTH + 500)).current, y: 160 },
+
+  const obstaclesData = [
+    { id: 1, initialX: SCREEN_WIDTH, y: 80 },
+    { id: 2, initialX: SCREEN_WIDTH + 150, y: 200 },
+    { id: 3, initialX: SCREEN_WIDTH + 300, y: 120 },
+    { id: 4, initialX: SCREEN_WIDTH + 400, y: 280 },
+    { id: 5, initialX: SCREEN_WIDTH + 500, y: 160 },
   ];
 
-  const stars = Array.from({ length: 15 }).map(() => ({
-    x: useRef(new Animated.Value(Math.random() * SCREEN_WIDTH)).current,
-    y: Math.random() * SCREEN_HEIGHT * 0.5,
-    size: Math.random() * 3 + 1,
-    opacity: useRef(new Animated.Value(Math.random())).current,
+  const obstacles = obstaclesData.map(obs => ({
+    ...obs,
+    x: useRef(new Animated.Value(obs.initialX)).current,
   }));
 
+  const stars = Array.from({ length: 15 }).map(() => {
+    const initialOpacity = 0.2 + Math.random() * 0.4;
+    return {
+      x: useRef(new Animated.Value(Math.random() * SCREEN_WIDTH)).current,
+      y: Math.random() * SCREEN_HEIGHT * 0.5,
+      size: Math.random() * 3 + 1,
+      initialOpacity,
+      opacity: useRef(new Animated.Value(initialOpacity)).current,
+    };
+  });
+
   useEffect(() => {
-    // Ship movement - dodging pattern
+    // Ship movement - smooth dodging pattern
+    const easing = Easing.inOut(Easing.sin);
     const shipAnimation = Animated.loop(
       Animated.sequence([
-        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.25, duration: 400, useNativeDriver: true }),
-        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.45, duration: 500, useNativeDriver: true }),
-        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.3, duration: 350, useNativeDriver: true }),
-        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.5, duration: 450, useNativeDriver: true }),
-        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.35, duration: 400, useNativeDriver: true }),
+        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.25, duration: 400, easing, useNativeDriver: true }),
+        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.55, duration: 600, easing, useNativeDriver: true }),
+        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.3, duration: 500, easing, useNativeDriver: true }),
+        Animated.timing(shipY, { toValue: SCREEN_HEIGHT * 0.4, duration: 400, easing, useNativeDriver: true }),
       ])
     );
 
@@ -52,14 +62,17 @@ const ShipDodgeScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
     const thrustAnimation = Animated.timing(shipX, {
       toValue: SCREEN_WIDTH * 0.35,
       duration: 3000,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     });
 
-    // Obstacles moving left
-    const obstacleAnimations = obstacles.map((obs, index) => 
+    // Obstacles moving left at constant speed
+    const baseSpeed = SCREEN_WIDTH / 1800;
+    const obstacleAnimations = obstacles.map((obs) =>
       Animated.timing(obs.x, {
-        toValue: -60,
-        duration: 2500 - index * 100,
+        toValue: -100,
+        duration: (obs.initialX + 100) / baseSpeed,
+        easing: Easing.linear,
         useNativeDriver: true,
       })
     );
@@ -68,8 +81,8 @@ const ShipDodgeScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
     const starAnimations = stars.map(star =>
       Animated.loop(
         Animated.sequence([
-          Animated.timing(star.opacity, { toValue: 1, duration: 500 + Math.random() * 500, useNativeDriver: true }),
-          Animated.timing(star.opacity, { toValue: 0.2, duration: 500 + Math.random() * 500, useNativeDriver: true }),
+          Animated.timing(star.opacity, { toValue: 1, duration: 600 + Math.random() * 400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(star.opacity, { toValue: star.initialOpacity, duration: 600 + Math.random() * 400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         ])
       )
     );
@@ -160,13 +173,13 @@ const BlockFitScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
     // Gap at x: 3
     { x: 4, y: 3, color: '#3B82F6' },
     { x: 5, y: 3, color: '#3B82F6' },
-    
+
     // Second row
     { x: 0, y: 2, color: '#22C55E' },
     { x: 1, y: 2, color: '#22C55E' },
     { x: 4, y: 2, color: '#E879F9' },
     { x: 5, y: 2, color: '#E879F9' },
-    
+
     // Third row partial
     { x: 0, y: 1, color: '#F97316' },
     { x: 5, y: 1, color: '#FBBF24' },
@@ -178,24 +191,28 @@ const BlockFitScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
       Animated.parallel([
         Animated.timing(blockY, {
           toValue: 220,
-          duration: 1500,
+          duration: 1200,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(blockRotation, {
           toValue: 1,
-          duration: 800,
+          duration: 1200,
+          easing: Easing.out(Easing.back(1.5)),
           useNativeDriver: true,
         }),
       ]),
       // Perfect fit flash
       Animated.timing(flashOpacity, {
         toValue: 1,
-        duration: 150,
+        duration: 100,
+        easing: Easing.ease,
         useNativeDriver: true,
       }),
       Animated.timing(flashOpacity, {
         toValue: 0,
-        duration: 150,
+        duration: 200,
+        easing: Easing.ease,
         useNativeDriver: true,
       }),
     ]).start(() => {
@@ -282,10 +299,12 @@ const BlockFitScene = ({ onAnimationEnd }: { onAnimationEnd: () => void }) => {
             left: GRID_OFFSET_X + 3 * BLOCK_SIZE,
             transform: [
               { translateY: blockY },
-              { rotate: blockRotation.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', '360deg'],
-              })},
+              {
+                rotate: blockRotation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '90deg'],
+                })
+              },
             ],
           },
         ]}
@@ -338,8 +357,8 @@ export default function RewardScene({ pointsEarned, onComplete, sceneType = 'ran
     setShowPoints(true);
     Animated.spring(pointsScale, {
       toValue: 1,
-      friction: 5,
-      tension: 40,
+      friction: 4,
+      tension: 60,
       useNativeDriver: true,
     }).start();
 
@@ -347,12 +366,13 @@ export default function RewardScene({ pointsEarned, onComplete, sceneType = 'ran
     setTimeout(() => {
       Animated.timing(fadeOut, {
         toValue: 0,
-        duration: 400,
+        duration: 300,
+        easing: Easing.in(Easing.ease),
         useNativeDriver: true,
       }).start(() => {
         onComplete();
       });
-    }, 1000);
+    }, 1200);
   };
 
   return (

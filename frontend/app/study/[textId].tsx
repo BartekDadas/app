@@ -40,15 +40,15 @@ interface WordTranslation {
 }
 
 // Word component with tap to translate
-const TappableWord = ({ 
-  word, 
-  onPress 
-}: { 
-  word: string; 
+const TappableWord = ({
+  word,
+  onPress
+}: {
+  word: string;
   onPress: (word: string) => void;
 }) => {
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       onPress={() => onPress(word)}
       activeOpacity={0.6}
       style={styles.wordContainer}
@@ -113,9 +113,10 @@ export default function StudyScreen() {
           duration: 300,
           useNativeDriver: true,
         }),
-        Animated.timing(slideAnim, {
+        Animated.spring(slideAnim, {
           toValue: 0,
-          duration: 300,
+          friction: 8,
+          tension: 40,
           useNativeDriver: true,
         }),
       ]).start();
