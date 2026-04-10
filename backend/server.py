@@ -358,7 +358,10 @@ async def import_text(text_input: TextCreate):
 @api_router.get("/texts", response_model=List[TextResponse])
 async def get_texts():
     """Get all imported texts."""
-    texts = await db.texts.find().sort("created_at", -1).to_list(100)
+    texts = await db.texts.find(
+        {},
+        {"id": 1, "title": 1, "sentence_count": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(100)
     return [TextResponse(
         id=t["id"],
         title=t["title"],
@@ -379,7 +382,10 @@ async def delete_text(text_id: str):
 @api_router.get("/texts/{text_id}/sentences", response_model=List[SentenceResponse])
 async def get_sentences(text_id: str):
     """Get all sentences for a text."""
-    sentences = await db.sentences.find({"text_id": text_id}).sort("order_index", 1).to_list(1000)
+    sentences = await db.sentences.find(
+        {"text_id": text_id},
+        {"id": 1, "text_id": 1, "sentence_ko": 1, "order_index": 1, "romanization": 1, "reference_meaning": 1, "key_points": 1, "difficulty_level": 1}
+    ).sort("order_index", 1).to_list(1000)
     return [SentenceResponse(
         id=s["id"],
         text_id=s["text_id"],
@@ -636,10 +642,10 @@ async def add_game_points(points: int):
 @api_router.get("/progress/{text_id}", response_model=List[ProgressResponse])
 async def get_text_progress(text_id: str):
     """Get progress for all sentences in a text."""
-    progress_list = await db.user_progress.find({
-        "text_id": text_id,
-        "user_id": "default_user"
-    }).to_list(1000)
+    progress_list = await db.user_progress.find(
+        {"text_id": text_id, "user_id": "default_user"},
+        {"sentence_id": 1, "attempts": 1, "passed": 1, "best_score": 1, "hints_used": 1}
+    ).to_list(1000)
     
     return [ProgressResponse(
         sentence_id=p["sentence_id"],
