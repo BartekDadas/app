@@ -19,9 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
 import RewardScene from '../../src/components/RewardScene';
 import { buildLLMHeaders } from '../../src/utils/llmConfig';
-import Constants from 'expo-constants';
-
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { API_URL } from '../../src/config/api';
 
 interface EvaluationResult {
   score: number;
