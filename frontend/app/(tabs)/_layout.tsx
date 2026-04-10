@@ -43,6 +43,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="models"
+        options={{
+          title: 'MODELS',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="hardware-chip" size={24} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

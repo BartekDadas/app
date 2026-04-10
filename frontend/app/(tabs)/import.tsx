@@ -16,9 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import Constants from 'expo-constants';
-
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { createText } from '../../src/database/db';
 
 export default function ImportScreen() {
   const router = useRouter();
@@ -39,22 +37,7 @@ export default function ImportScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/texts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          raw_text: text.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to import text');
-      }
-
-      const data = await response.json();
+      const data = await createText(title.trim(), text.trim());
       Alert.alert(
         'Success!',
         `Imported ${data.sentence_count} sentences`,
@@ -90,7 +73,7 @@ export default function ImportScreen() {
         const file = result.assets[0];
         const content = await FileSystem.readAsStringAsync(file.uri);
         setText(content);
-        
+
         // Auto-fill title from filename if empty
         if (!title.trim() && file.name) {
           setTitle(file.name.replace(/\.[^/.]+$/, ''));

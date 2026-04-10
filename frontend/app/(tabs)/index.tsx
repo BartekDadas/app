@@ -12,9 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
-import Constants from 'expo-constants';
-
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { getTexts, getUserStats } from '../../src/database/db';
 
 interface TextItem {
   id: string;
@@ -29,20 +27,21 @@ export default function HomeScreen() {
   const [texts, setTexts] = useState<TextItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
+      setError(null);
       // Fetch texts
-      const textsRes = await fetch(`${API_URL}/api/texts`);
-      const textsData = await textsRes.json();
-      setTexts(textsData);
+      const textsData = await getTexts();
+      setTexts(textsData as any);
 
       // Fetch stats
-      const statsRes = await fetch(`${API_URL}/api/stats`);
-      const statsData = await statsRes.json();
-      setUserStats(statsData);
+      const statsData = await getUserStats();
+      if (statsData) setUserStats(statsData);
     } catch (error) {
       console.error('Error fetching data:', error);
+      setError('Failed to load user data. Please try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -87,6 +86,13 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={24} color="#EF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -116,7 +122,7 @@ export default function HomeScreen() {
         {/* Texts List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>YOUR TEXTS</Text>
-          
+
           {texts.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={64} color="#4B5563" />
@@ -210,6 +216,23 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 8,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 14,
+    flex: 1,
   },
   statsRow: {
     flexDirection: 'row',

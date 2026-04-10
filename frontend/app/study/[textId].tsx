@@ -18,9 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
 import RewardScene from '../../src/components/RewardScene';
-import Constants from 'expo-constants';
-
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { getSentences, getUserStats, logUserProgress } from '../../src/database/db';
+import { analyzeSentenceOffline, translateWordOffline, evaluateAnswerOffline, getHintOffline } from '../../src/services/llmService';
 
 interface EvaluationResult {
   score: number;
@@ -128,9 +127,8 @@ export default function StudyScreen() {
 
   const loadSentences = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/texts/${textId}/sentences`);
-      const data = await response.json();
-      setSentences(data);
+      const data = await getSentences(textId);
+      setSentences(data as any);
       setCurrentSentenceIndex(0);
       resetHintLevel();
     } catch (error) {
@@ -144,12 +142,9 @@ export default function StudyScreen() {
     if (!currentSentence) return;
     setAnalyzing(true);
     try {
-      await fetch(`${API_URL}/api/sentences/${currentSentence.id}/analyze`, {
-        method: 'POST',
-      });
-      const response = await fetch(`${API_URL}/api/texts/${textId}/sentences`);
-      const data = await response.json();
-      setSentences(data);
+      await analyzeSentenceOffline(currentSentence.id);
+      const data = await getSentences(textId);
+      setSentences(data as any);
     } catch (error) {
       console.error('Error analyzing sentence:', error);
     } finally {
@@ -163,12 +158,7 @@ export default function StudyScreen() {
     setSelectedWord({ word, translation: '', romanization: '' });
 
     try {
-      const response = await fetch(`${API_URL}/api/translate-word`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word }),
-      });
-      const data = await response.json();
+      const data = await translateWordOffline(word);
       setSelectedWord(data);
     } catch (error) {
       console.error('Error translating word:', error);
@@ -185,18 +175,10 @@ export default function StudyScreen() {
     setSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sentence_id: currentSentence.id,
-          user_answer: userAnswer.trim(),
-          hint_level: currentHintLevel,
-        }),
-      });
-
-      const evalResult: EvaluationResult = await response.json();
+      const evalResult = await evaluateAnswerOffline(currentSentence.id, userAnswer.trim(), currentHintLevel);
       setResult(evalResult);
+
+      await logUserProgress(currentSentence.id, textId, evalResult.passed, evalResult.score, currentHintLevel, evalResult.points_earned);
 
       if (evalResult.passed) {
         addPoints(evalResult.points_earned);
@@ -206,9 +188,8 @@ export default function StudyScreen() {
         setShowResult(true);
       }
 
-      const statsRes = await fetch(`${API_URL}/api/stats`);
-      const statsData = await statsRes.json();
-      setUserStats(statsData);
+      const statsData = await getUserStats();
+      if (statsData) setUserStats(statsData);
     } catch (error) {
       console.error('Error submitting answer:', error);
     } finally {
@@ -221,10 +202,7 @@ export default function StudyScreen() {
 
     const nextLevel = currentHintLevel + 1;
     try {
-      const response = await fetch(
-        `${API_URL}/api/hints/${currentSentence.id}/${nextLevel}`
-      );
-      const data = await response.json();
+      const data = await getHintOffline(currentSentence.id, nextLevel);
       setHint(data.hint);
       incrementHintLevel();
     } catch (error) {
