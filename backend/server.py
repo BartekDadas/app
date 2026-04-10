@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -139,12 +139,46 @@ async def get_or_create_user_stats(user_id: str = "default_user"):
         await db.user_stats.insert_one(stats)
     return stats
 
+def get_llm_config(
+    x_llm_provider: Optional[str] = None,
+    x_llm_api_key: Optional[str] = None,
+    x_llm_model: Optional[str] = None
+) -> dict:
+    """Get LLM configuration from headers or use defaults."""
+    # Default configuration
+    config = {
+        "api_key": os.environ.get('EMERGENT_LLM_KEY'),
+        "provider": "openai",
+        "model": "gpt-4o"
+    }
+    
+    # Override with custom config if provided
+    if x_llm_api_key and x_llm_provider:
+        config["api_key"] = x_llm_api_key
+        config["provider"] = x_llm_provider
+        
+        # Set appropriate model based on provider
+        if x_llm_model:
+            config["model"] = x_llm_model
+        else:
+            # Default models for each provider
+            model_defaults = {
+                "openai": "gpt-4o",
+                "anthropic": "claude-sonnet-4-5-20250929",
+                "gemini": "gemini-2.5-flash"
+            }
+            config["model"] = model_defaults.get(x_llm_provider, "gpt-4o")
+    
+    return config
+
 # ==================== LLM FUNCTIONS ====================
 
-async def analyze_sentence_with_llm(sentence_ko: str) -> dict:
+async def analyze_sentence_with_llm(sentence_ko: str, llm_config: dict = None) -> dict:
     """Use LLM to analyze a Korean sentence."""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        config = llm_config or get_llm_config()
+        api_key = config.get("api_key")
+        
         if not api_key:
             return {
                 "reference_meaning": "Translation not available",
@@ -165,7 +199,7 @@ async def analyze_sentence_with_llm(sentence_ko: str) -> dict:
 Respond ONLY in valid JSON format with keys: reference_meaning, romanization, key_points (array of strings), difficulty_level
 
 Example key_points format: ["오늘 (today) - noun", "날씨가 (weather) - noun + subject marker", "정말 (really) - adverb"]"""
-        ).with_model("openai", "gpt-4o")
+        ).with_model(config.get("provider", "openai"), config.get("model", "gpt-4o"))
         
         user_message = UserMessage(
             text=f"Analyze this Korean sentence: {sentence_ko}"
@@ -205,10 +239,12 @@ Example key_points format: ["오늘 (today) - noun", "날씨가 (weather) - noun
             "difficulty_level": "A1"
         }
 
-async def evaluate_answer_with_llm(sentence_ko: str, reference_meaning: str, key_points: List[str], user_answer: str) -> dict:
+async def evaluate_answer_with_llm(sentence_ko: str, reference_meaning: str, key_points: List[str], user_answer: str, llm_config: dict = None) -> dict:
     """Use LLM to evaluate user's translation answer."""
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        config = llm_config or get_llm_config()
+        api_key = config.get("api_key")
+        
         if not api_key:
             raise HTTPException(status_code=500, detail="LLM API key not configured")
         
@@ -228,7 +264,7 @@ Respond ONLY in valid JSON format with keys:
 - hint (string, max 1 sentence, do NOT reveal full answer)
 
 Be encouraging but accurate. Partial understanding should get partial credit."""
-        ).with_model("openai", "gpt-4o")
+        ).with_model(config.get("provider", "openai"), config.get("model", "gpt-4o"))
         
         prompt = f"""Korean sentence: {sentence_ko}
 Reference translation: {reference_meaning}
@@ -373,7 +409,12 @@ async def get_sentence(sentence_id: str):
     )
 
 @api_router.post("/sentences/{sentence_id}/analyze")
-async def analyze_sentence(sentence_id: str):
+async def analyze_sentence(
+    sentence_id: str,
+    x_llm_provider: Optional[str] = Header(None),
+    x_llm_api_key: Optional[str] = Header(None),
+    x_llm_model: Optional[str] = Header(None)
+):
     """Analyze a sentence with LLM (get translation, romanization, key points)."""
     sentence = await db.sentences.find_one({"id": sentence_id})
     if not sentence:
@@ -391,8 +432,11 @@ async def analyze_sentence(sentence_id: str):
             }
         }
     
+    # Get LLM config
+    llm_config = get_llm_config(x_llm_provider, x_llm_api_key, x_llm_model)
+    
     # Analyze with LLM
-    analysis = await analyze_sentence_with_llm(sentence["sentence_ko"])
+    analysis = await analyze_sentence_with_llm(sentence["sentence_ko"], llm_config)
     
     # Update sentence in database
     await db.sentences.update_one(
@@ -411,8 +455,16 @@ async def analyze_sentence(sentence_id: str):
 # ----- ANSWER EVALUATION -----
 
 @api_router.post("/evaluate", response_model=EvaluationResult)
-async def evaluate_answer(submission: AnswerSubmit):
+async def evaluate_answer(
+    submission: AnswerSubmit,
+    x_llm_provider: Optional[str] = Header(None),
+    x_llm_api_key: Optional[str] = Header(None),
+    x_llm_model: Optional[str] = Header(None)
+):
     """Evaluate user's translation answer."""
+    # Get LLM config
+    llm_config = get_llm_config(x_llm_provider, x_llm_api_key, x_llm_model)
+    
     # Get sentence
     sentence = await db.sentences.find_one({"id": submission.sentence_id})
     if not sentence:
@@ -420,7 +472,7 @@ async def evaluate_answer(submission: AnswerSubmit):
     
     # Ensure sentence is analyzed
     if not sentence.get("reference_meaning"):
-        analysis = await analyze_sentence_with_llm(sentence["sentence_ko"])
+        analysis = await analyze_sentence_with_llm(sentence["sentence_ko"], llm_config)
         await db.sentences.update_one(
             {"id": submission.sentence_id},
             {"$set": {
@@ -439,7 +491,8 @@ async def evaluate_answer(submission: AnswerSubmit):
         sentence["sentence_ko"],
         sentence.get("reference_meaning", ""),
         sentence.get("key_points", []),
-        submission.user_answer
+        submission.user_answer,
+        llm_config
     )
     
     semantic_score = eval_result.get("semantic_score", 50)
@@ -602,11 +655,18 @@ class WordTranslateRequest(BaseModel):
     word: str
 
 @api_router.post("/translate-word")
-async def translate_word(request: WordTranslateRequest):
+async def translate_word(
+    request: WordTranslateRequest,
+    x_llm_provider: Optional[str] = Header(None),
+    x_llm_api_key: Optional[str] = Header(None),
+    x_llm_model: Optional[str] = Header(None)
+):
     """Translate a single Korean word."""
     word = request.word
     try:
-        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        config = get_llm_config(x_llm_provider, x_llm_api_key, x_llm_model)
+        api_key = config.get("api_key")
+        
         if not api_key:
             return {"word": word, "translation": "Translation unavailable", "romanization": ""}
         
@@ -615,7 +675,7 @@ async def translate_word(request: WordTranslateRequest):
             session_id=f"word_{uuid.uuid4()}",
             system_message="""You are a Korean-English translator. Translate the given Korean word/phrase.
 Respond ONLY in valid JSON format with keys: translation (English meaning), romanization (pronunciation), part_of_speech (noun/verb/adjective/etc)"""
-        ).with_model("openai", "gpt-4o")
+        ).with_model(config.get("provider", "openai"), config.get("model", "gpt-4o"))
         
         user_message = UserMessage(text=f"Translate this Korean word: {word}")
         response = await chat.send_message(user_message)
