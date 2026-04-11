@@ -18,9 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store/appStore';
 import RewardScene from '../../src/components/RewardScene';
-import Constants from 'expo-constants';
-
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { buildLLMHeaders } from '../../src/utils/llmConfig';
+import { API_URL } from '../../src/config/api';
 
 interface EvaluationResult {
   score: number;
@@ -144,8 +143,10 @@ export default function StudyScreen() {
     if (!currentSentence) return;
     setAnalyzing(true);
     try {
+      const headers = await buildLLMHeaders();
       await fetch(`${API_URL}/api/sentences/${currentSentence.id}/analyze`, {
         method: 'POST',
+        headers,
       });
       const response = await fetch(`${API_URL}/api/texts/${textId}/sentences`);
       const data = await response.json();
@@ -163,9 +164,10 @@ export default function StudyScreen() {
     setSelectedWord({ word, translation: '', romanization: '' });
 
     try {
+      const headers = await buildLLMHeaders();
       const response = await fetch(`${API_URL}/api/translate-word`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ word }),
       });
       const data = await response.json();
@@ -185,9 +187,10 @@ export default function StudyScreen() {
     setSubmitting(true);
 
     try {
+      const headers = await buildLLMHeaders();
       const response = await fetch(`${API_URL}/api/evaluate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           sentence_id: currentSentence.id,
           user_answer: userAnswer.trim(),
