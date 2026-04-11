@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 import { loadModel, isModelLoaded } from '../../src/services/llmService';
 
 // Example small models that work well on mobile
@@ -33,6 +34,7 @@ export default function ModelsScreen() {
     const [downloadTask, setDownloadTask] = useState<FileSystem.DownloadResumable | null>(null);
     const [localModels, setLocalModels] = useState<string[]>([]);
     const [activeModel, setActiveModel] = useState<string | null>(null);
+    const [customUrl, setCustomUrl] = useState('');
 
     useEffect(() => {
         refreshLocalModels();
@@ -118,6 +120,75 @@ export default function ModelsScreen() {
         }
     };
 
+    const handleCustomDownload = () => {
+        if (!customUrl || !customUrl.trim()) return;
+        try {
+            const urlObj = new URL(customUrl.trim());
+            let filename = urlObj.pathname.split('/').pop();
+            if (!filename || !filename.endsWith('.gguf')) {
+                filename = `custom_${Date.now()}.gguf`;
+            }
+            startDownload({
+                name: 'Custom Model',
+                url: customUrl.trim(),
+                size: 'Unknown',
+                filename
+            });
+            setCustomUrl('');
+        } catch (e) {
+            Alert.alert('Invalid URL', 'Please enter a valid URL');
+        }
+    };
+
+    const importLocalModel = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: false,
+            });
+
+            if (result.canceled) return;
+
+            const file = result.assets[0];
+            let filename = file.name;
+
+            if (!filename.endsWith('.gguf')) {
+                Alert.alert('Warning', 'The selected file does not have a .gguf extension. It might not work properly.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Import Anyway', onPress: () => processFileImport(file.uri, filename) }
+                ]);
+            } else {
+                processFileImport(file.uri, filename);
+            }
+        } catch (error) {
+            console.error('Import error:', error);
+            Alert.alert('Error', 'Failed to pick the file');
+        }
+    };
+
+    const processFileImport = async (sourceUri: string, filename: string) => {
+        try {
+            const destinationUri = `${FileSystem.documentDirectory}${filename}`;
+            const fileInfo = await FileSystem.getInfoAsync(destinationUri);
+            if (fileInfo.exists) {
+                Alert.alert('Exists', 'Model with this name already exists in the app.');
+                return;
+            }
+
+            Alert.alert('Importing', 'Copying model to app storage... this may take a moment.');
+            await FileSystem.copyAsync({
+                from: sourceUri,
+                to: destinationUri
+            });
+
+            Alert.alert('Success', 'Model imported successfully');
+            refreshLocalModels();
+        } catch (error) {
+            console.error('Copy error:', error);
+            Alert.alert('Error', 'Failed to copy the file to app storage');
+        }
+    };
+
     const activateModel = async (filename: string) => {
         try {
             Alert.alert('Loading', 'Loading AI into RAM... This may take a moment.');
@@ -177,6 +248,40 @@ export default function ModelsScreen() {
                         </TouchableOpacity>
                     </View>
                 )}
+
+                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>CUSTOM MODEL URL</Text>
+                <View style={[styles.card, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    <TextInput
+                        style={{ backgroundColor: '#0D0D1A', color: '#FFF', padding: 12, borderRadius: 8, marginBottom: 12 }}
+                        placeholder="https://huggingface.co/.../model.gguf"
+                        placeholderTextColor="#6B7280"
+                        value={customUrl}
+                        onChangeText={setCustomUrl}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                        style={[styles.actionButton, { alignItems: 'center', opacity: (!customUrl.trim() || downloading) ? 0.5 : 1 }]}
+                        onPress={handleCustomDownload}
+                        disabled={downloading || !customUrl.trim()}
+                    >
+                        <Text style={{ color: '#FFF', fontWeight: '600' }}>Download Custom Model</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 12 }}>
+                        <View style={{ flex: 1, height: 1, backgroundColor: '#2D2D4A' }} />
+                        <Text style={{ color: '#6B7280', marginHorizontal: 16 }}>OR</Text>
+                        <View style={{ flex: 1, height: 1, backgroundColor: '#2D2D4A' }} />
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.actionButton, { alignItems: 'center', backgroundColor: '#3B82F6', opacity: downloading ? 0.5 : 1 }]}
+                        onPress={importLocalModel}
+                        disabled={downloading}
+                    >
+                        <Text style={{ color: '#FFF', fontWeight: '600' }}>Select Local File</Text>
+                    </TouchableOpacity>
+                </View>
 
                 <Text style={[styles.sectionTitle, { marginTop: 24 }]}>DOWNLOADED MODELS</Text>
                 {localModels.length === 0 ? (
